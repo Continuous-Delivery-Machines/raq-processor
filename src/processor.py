@@ -50,7 +50,7 @@ class RepositoryLanguage(Base):
     __tablename__ = 'RepositoryLanguages'
     LanguageId = Column(Integer, ForeignKey('Languages.Id'), primary_key=True)
     RepositoryId = Column(Integer, ForeignKey('Repositories.Id'), primary_key=True)
-    Size_in_Bytes = Column(Integer)
+    Size = Column(Integer)
     Repository = relationship('Repository', back_populates='Languages')
     Language = relationship('Language', back_populates='Repositories')
 
@@ -93,19 +93,16 @@ def parse_json(file, session):
             session.add(db_language)
             session.commit()
         # create new connection between repository and language
-        session.add(RepositoryLanguage(Repository=db_repository, Language=db_language, Size_in_Bytes=size))
+        session.add(RepositoryLanguage(Repository=db_repository, Language=db_language, Size=size))
         session.commit()
     print(' ✓')
 
-    repo_size = 0
-    for language_size in session.query.with_entities(RepositoryLanguage.Size_in_Bytes).filter(
-            Repository.Id == db_repository.Id).all():
-        repo_size += language_size
+    repo_size_in_bytes = session.query(func.sum(RepositoryLanguage.Size)).filter(
+        Repository.Id == db_repository.Id).scalar()
     # dictionary with 'Language' : 'percentage on repo'
-    repo_lang_procent = {}
-    for repo_language in session.query(RepositoryLanguage).filter(Repository.Id == db_repository.Id):
-        language = session.query(Language).filter(Language.Id == repo_language.LanguageId).one()
-        repo_lang_procent.update(language=repo_language.Size_In_Bytes / repo_size)
+    repo_lang_sizes_in_percent = {}
+    for repo_language in session.query(RepositoryLanguage).filter(Repository.Id == db_repository.Id).all():
+        repo_lang_sizes_in_percent[repo_language.LanguageId] = repo_language.Size / repo_size_in_bytes
 
     for repo_language in session.query(RepositoryLanguage).filter(Repository.Id == db_repository.Id).all():
         for insult in session.query(Insult).all():
@@ -119,10 +116,11 @@ def parse_json(file, session):
                 LanguageInsult.LanguageId == repo_language.LanguageId and
                 LanguageInsult.InsultId == insult.Id).one_or_none()
             if language_insult is None:
-                insult_factor = insult_counter * repo_lang_procent[repo_language]
-                LanguageInsult(Language=repo_language, Insult=insult, Occurence=insult_factor)
+                insult_factor = insult_counter * repo_lang_sizes_in_percent[repo_language.LanguageId]
+                language_insult = LanguageInsult(LanguageId=repo_language.LanguageId, InsultId=insult.Id, Occurence=insult_factor)
+                session.add(language_insult)
             else:
-                language_insult.Occurence += insult_counter * repo_lang_procent[repo_language]
+                language_insult.Occurence += insult_counter * repo_lang_sizes_in_percent[repo_language.LanguageId]
             session.commit()
 
 

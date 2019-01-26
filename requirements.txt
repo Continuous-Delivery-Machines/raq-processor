@@ -1,0 +1,4 @@
+mysql-connector
+boto3
+SQLAlchemy
+mysqlclient

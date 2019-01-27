@@ -6,7 +6,7 @@ import os
 import re
 
 from sqlalchemy import Column, Integer, String, Float, func
-from sqlalchemy import create_engine, ForeignKey, Text
+from sqlalchemy import create_engine, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -97,6 +97,7 @@ def parse_json(file, session):
         session.commit()
     print(' ✓')
 
+    print('Processing insults...', end='')
     repo_size_in_bytes = session.query(func.sum(RepositoryLanguage.Size)).filter(
         Repository.Id == db_repository.Id).scalar()
     # dictionary with 'Language' : 'percentage on repo'
@@ -117,11 +118,13 @@ def parse_json(file, session):
                 LanguageInsult.InsultId == insult.Id).one_or_none()
             if language_insult is None:
                 insult_factor = insult_counter * repo_lang_sizes_in_percent[repo_language.LanguageId]
-                language_insult = LanguageInsult(LanguageId=repo_language.LanguageId, InsultId=insult.Id, Occurence=insult_factor)
+                language_insult = LanguageInsult(LanguageId=repo_language.LanguageId, InsultId=insult.Id,
+                                                 Occurence=insult_factor)
                 session.add(language_insult)
             else:
                 language_insult.Occurence += insult_counter * repo_lang_sizes_in_percent[repo_language.LanguageId]
             session.commit()
+    print(' ✓')
 
 
 def main():

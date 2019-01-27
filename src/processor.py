@@ -1,14 +1,16 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-
+import decimal
 import json
 import os
 import re
 
-from sqlalchemy import Column, Integer, String, Float, func
+from sqlalchemy import Column, Integer, String, Float, func, Text
 from sqlalchemy import create_engine, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+
+from src.ftp_manager import download_repo, remove_repo
 
 db_url = 'mysql://' + \
          os.environ['DB_USER'] + ':' + \
@@ -25,8 +27,8 @@ Base = declarative_base()
 class Repository(Base):
     __tablename__ = 'Repositories'
     Id = Column(Integer, primary_key=True)
-    Name = Column(String(100))
-    Description = Column(String(100))
+    Name = Column(String(140))
+    Description = Column(Text)
     Languages = relationship('RepositoryLanguage', back_populates='Repository')
 
 
@@ -59,7 +61,7 @@ class LanguageInsult(Base):
     __tablename__ = 'LanguageInsults'
     LanguageId = Column(Integer, ForeignKey('Languages.Id'), primary_key=True)
     InsultId = Column(Integer, ForeignKey('Insults.Id'), primary_key=True)
-    Occurence = Column(Float)
+    Occurrence = Column(Float)
     Language = relationship('Language', back_populates='Insults')
     Insult = relationship('Insult', back_populates='Languages')
 
@@ -119,29 +121,44 @@ def parse_json(file, session):
             if language_insult is None:
                 insult_factor = insult_counter * repo_lang_sizes_in_percent[repo_language.LanguageId]
                 language_insult = LanguageInsult(LanguageId=repo_language.LanguageId, InsultId=insult.Id,
-                                                 Occurence=insult_factor)
+                                                 Occurrence=insult_factor)
                 session.add(language_insult)
             else:
-                language_insult.Occurence += insult_counter * repo_lang_sizes_in_percent[repo_language.LanguageId]
+                language_insult.Occurrence += insult_counter * float(repo_lang_sizes_in_percent[repo_language.LanguageId])
             session.commit()
     print(' ✓')
 
 
-def main():
+def main(repo_id):
     Base.metadata.bind = engine
     # delete all tables (for testing purpose)
-    Base.metadata.drop_all()
+    # Base.metadata.drop_all()
     # create missing database tables
     Base.metadata.create_all()
 
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    session.add(Insult(Text='fuck', Regex='fuck'))
+    # session.add(Insult(Text='fuck', Regex='fuck'))
 
-    with open("tmp/876.json") as json_file:
+    download_repo(repo_id)
+    with open(os.environ['FTP_LOCAL_DIR'] + '/' + str(repo_id) + '.json') as json_file:
         parse_json(json_file, session)
+    remove_repo(repo_id)
+
+
+def lambda_handler(event, context):
+    for record in event['Records']:
+        message_attributes = record['messageAttributes']
+        repo_id = message_attributes['repo_id']
+
+        main(repo_id)
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Processed repo #' + str(repo_id))
+    }
 
 
 if __name__ == '__main__':
-    main()
+    main(1)
